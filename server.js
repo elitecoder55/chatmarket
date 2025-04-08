@@ -14,7 +14,7 @@ app.use(express.json());
 let users = [];
 let listings = [];
 let messages = [];
-let bids = []; // { listingId, user, amount }
+let bids = [];
 
 const superheroPics = [
   'https://cdn.pixabay.com/photo/2017/08/06/21/01/spiderman-2597178_1280.jpg',
@@ -23,7 +23,7 @@ const superheroPics = [
 ];
 
 // API Endpoints
-app.get('/users', (req, res) => res.json(users.map(u => ({ id: u.id, name: u.name })))); 
+app.get('/users', (req, res) => res.json(users.map(u => ({ id: u.id, name: u.name }))));
 app.get('/listings', (req, res) => res.json(listings));
 
 app.post('/signup', (req, res) => {
@@ -62,8 +62,10 @@ app.post('/negotiate', (req, res) => {
 
 app.post('/generate-image', (req, res) => {
   const { itemName } = req.body;
-  // Placeholder AI-generated image URL (replace with real AI API if available)
+  if (!itemName) return res.status(400).json({ error: 'Item name required' });
+  // Fallback to placeholder if no real AI integration
   const imageUrl = `https://via.placeholder.com/150?text=${encodeURIComponent(itemName)}`;
+  console.log(`Generated image for ${itemName}: ${imageUrl}`); // Debug log
   res.json({ imageUrl });
 });
 
@@ -76,7 +78,7 @@ app.post('/bid', (req, res) => {
   const { listingId, user, amount } = req.body;
   const existingBid = bids.find(b => b.listingId === listingId && b.user === user);
   if (existingBid) {
-    existingBid.amount = amount; // Update existing bid
+    existingBid.amount = amount;
   } else {
     bids.push({ listingId, user, amount });
   }

@@ -186,35 +186,40 @@
       document.getElementById("messageInput").value = "";
     }
 
-    function addListing() {
+    async function addListing() {
       const title = document.getElementById("listingTitle").value.trim();
       const price = +document.getElementById("listingPrice").value;
       if (!title || !price || !currentUser) return alert("Enter details and sign in first");
 
-      fetch(`${baseUrl}/negotiate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ price })
-      })
-        .then(res => res.json())
-        .then(data => {
-          const negotiatedPrice = data.suggestedPrice;
-          fetch(`${baseUrl}/generate-image`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ itemName: title })
-          })
-            .then(res => res.json())
-            .then(imageData => {
-              fetch(`${baseUrl}/listings`, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser, imageUrl: imageData.imageUrl })
-              });
-              document.getElementById("listingTitle").value = "";
-              document.getElementById("listingPrice").value = "";
-            });
+      try {
+        const negotiateRes = await fetch(`${baseUrl}/negotiate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ price })
         });
+        const negotiateData = await negotiateRes.json();
+        const negotiatedPrice = negotiateData.suggestedPrice;
+
+        const imageRes = await fetch(`${baseUrl}/generate-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ itemName: title })
+        });
+        const imageData = await imageRes.json();
+        const imageUrl = imageData.imageUrl;
+
+        await fetch(`${baseUrl}/listings`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser, imageUrl })
+        });
+
+        document.getElementById("listingTitle").value = "";
+        document.getElementById("listingPrice").value = "";
+      } catch (error) {
+        console.error("Error adding listing:", error);
+        alert("Failed to add listing. Check console for details.");
+      }
     }
 
     function fetchSuperheroPic() {
@@ -261,11 +266,11 @@
       const container = document.getElementById("listingContainer");
       container.innerHTML = "";
       listings.forEach(listing => {
-        const highestBid = bids.filter(b => b.listingId === listing.id).sort((a, b) => b.amount - a.amount)[0];
+        const highestBid = window.bids ? window.bids.filter(b => b.listingId === listing.id).sort((a, b) => b.amount - a.amount)[0] : null;
         const card = document.createElement("div");
         card.className = "bg-white rounded-xl p-3 flex items-center shadow-md hover:shadow-lg transition";
         card.innerHTML = `
-          <img src="${listing.imageUrl || 'https://via.placeholder.com/80'}" class="w-20 h-20 rounded-lg mr-3 object-cover" />
+          <img src="${listing.imageUrl || 'https://via.placeholder.com/80'}" class="w-20 h-20 rounded-lg mr-3 object-cover" onerror="this.src='https://via.placeholder.com/80'" />
           <div class="flex-1">
             <h4 class="text-lg font-semibold text-gray-800">${listing.title}</h4>
             <p class="text-teal-600 font-medium">₹${highestBid ? highestBid.amount : listing.price}</p>
@@ -283,8 +288,8 @@
     });
 
     socket.on("bids", (bids) => {
-      window.bids = bids; // Store bids globally for access
-      socket.emit("listings", listings); // Refresh listings to show updated bids
+      window.bids = bids;
+      socket.emit("listings", listings); // Trigger refresh
     });
 
     function startItemChat(listingId, seller) {
