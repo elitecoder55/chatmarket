@@ -1,8 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>ChatMarket</title>
   <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
@@ -11,10 +11,10 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100">
-  <div id="root" class="h-screen"></div>
+  <div id="root" class="h-screen w-screen"></div>
 
   <script type="text/babel">
-    const { useState, useEffect } = React;
+    const { useState, useEffect, useRef } = React;
 
     function App() {
       const [messages, setMessages] = useState([]);
@@ -26,6 +26,8 @@
       const [socket, setSocket] = useState(null);
       const [currentChat, setCurrentChat] = useState(null);
       const [yourName, setYourName] = useState("");
+      const chatEndRef = useRef(null);
+      const emojiList = ["😀", "😂", "😍", "😎", "😭", "👍", "🎉", "❤️", "🔥"];
 
       const SERVER_URL = "https://chatmarket-1.onrender.com";
 
@@ -34,15 +36,20 @@
         const sock = io(SERVER_URL);
         setSocket(sock);
 
-        sock.on('users', (usr) => setUsers(usr));
-        sock.on('listings', (lsts) => setListings(lsts));
-        sock.on('messages', (msgs) => setMessages(msgs));
+        sock.emit('register', yourName);
+        sock.on('users', setUsers);
+        sock.on('listings', setListings);
+        sock.on('messages', setMessages);
 
         fetch(`${SERVER_URL}/users`).then(res => res.json()).then(setUsers);
         fetch(`${SERVER_URL}/listings`).then(res => res.json()).then(setListings);
 
         return () => sock.disconnect();
       }, [yourName]);
+
+      useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, [messages]);
 
       const sendMessage = () => {
         if (newMessage.trim() && socket && currentChat) {
@@ -57,70 +64,10 @@
         }
       };
 
-      const addListing = () => {
-        if (newListing.title && newListing.price && newListing.seller) {
-          fetch(`${SERVER_URL}/listings`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newListing)
-          });
-          setNewListing({ title: "", price: "", seller: "" });
-        }
-      };
-
-      const addUser = () => {
-        if (newUser.trim()) {
-          fetch(`${SERVER_URL}/users`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name: newUser })
-          });
-          setNewUser("");
-        }
-      };
-
-      const negotiatePrice = async (price) => {
-        try {
-          const res = await fetch(`${SERVER_URL}/negotiate`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ price })
-          });
-          const data = await res.json();
-          return data.suggestedPrice;
-        } catch (error) {
-          console.error('Negotiation failed:', error);
-          return Math.round(price * 0.85);
-        }
-      };
-
       const filteredMessages = messages.filter(msg =>
         (msg.from === yourName && msg.to === currentChat) ||
         (msg.from === currentChat && msg.to === yourName)
       );
-
-      const ListingCard = ({ listing }) => {
-        const [suggested, setSuggested] = useState(null);
-
-        useEffect(() => {
-          negotiatePrice(listing.price).then(setSuggested);
-        }, [listing.price]);
-
-        return (
-          <div
-            onClick={() => setCurrentChat(listing.seller)}
-            className="p-3 bg-gray-100 rounded-lg mb-2 shadow cursor-pointer"
-          >
-            <h3 className="font-semibold">{listing.title}</h3>
-            <p className="text-sm text-gray-600">
-              ${listing.price} • {listing.seller}
-            </p>
-            {suggested !== null && (
-              <p className="text-xs text-blue-600">Suggested: ${suggested}</p>
-            )}
-          </div>
-        );
-      };
 
       if (!yourName) {
         return (
@@ -142,6 +89,7 @@
 
       return (
         <div className="flex h-full">
+          {/* Sidebar */}
           <div className="w-1/3 bg-white border-r flex flex-col">
             <div className="bg-green-600 text-white p-4">
               <h1 className="text-lg font-bold">ChatMarket</h1>
@@ -153,7 +101,7 @@
                 <div
                   key={user.id || user.name}
                   onClick={() => setCurrentChat(user.name)}
-                  className={`p-3 rounded-lg mb-2 cursor-pointer ${currentChat === user.name ? "bg-green-100" : "bg-gray-100"}`}
+                  className={`p-2 rounded-lg mb-1 cursor-pointer text-sm ${currentChat === user.name ? "bg-green-100" : "bg-gray-100"}`}
                 >
                   {user.name}
                 </div>
@@ -162,74 +110,65 @@
                 type="text"
                 value={newUser}
                 onChange={(e) => setNewUser(e.target.value)}
-                className="w-full p-2 border rounded mb-2"
+                className="w-full p-2 border rounded mt-2 mb-1"
                 placeholder="Add new user"
               />
-              <button onClick={addUser} className="w-full bg-green-600 text-white p-2 rounded">Add User</button>
-            </div>
-            <div className="p-4 border-t">
-              <h2 className="font-semibold mb-2">Marketplace</h2>
-              {listings.map(listing => (
-                <ListingCard key={listing.id || listing.title} listing={listing} />
-              ))}
-              <input
-                type="text"
-                value={newListing.title}
-                onChange={(e) => setNewListing({ ...newListing, title: e.target.value })}
-                className="w-full p-2 border rounded mb-2"
-                placeholder="Item title"
-              />
-              <input
-                type="number"
-                value={newListing.price}
-                onChange={(e) => setNewListing({ ...newListing, price: e.target.value })}
-                className="w-full p-2 border rounded mb-2"
-                placeholder="Price ($)"
-              />
-              <input
-                type="text"
-                value={newListing.seller}
-                onChange={(e) => setNewListing({ ...newListing, seller: e.target.value })}
-                className="w-full p-2 border rounded mb-2"
-                placeholder="Seller name"
-              />
-              <button onClick={addListing} className="w-full bg-green-600 text-white p-2 rounded">Add</button>
+              <button onClick={() => {
+                if (newUser.trim()) {
+                  fetch(`${SERVER_URL}/users`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newUser })
+                  });
+                  setNewUser("");
+                }
+              }} className="w-full bg-green-600 text-white p-2 rounded">Add User</button>
             </div>
           </div>
 
-          <div className="w-2/3 flex flex-col bg-[url('https://whatsapp.com/img/chat-bg.png')] bg-repeat">
-            <div className="bg-green-600 text-white p-4 flex items-center">
-              <h2 className="text-lg font-semibold">{currentChat ? `Chat with ${currentChat}` : "Select a user"}</h2>
+          {/* Chat Area */}
+          <div className="w-2/3 flex flex-col bg-[url('https://i.imgur.com/Oa1FqXG.png')] bg-cover">
+            <div className="bg-green-600 text-white p-4">
+              <h2 className="text-lg font-semibold">{currentChat ? `Chat with ${currentChat}` : "Select a user to start chat"}</h2>
             </div>
-            <div className="flex-1 p-4 overflow-y-auto">
-              {filteredMessages.map(msg => (
+            <div className="flex-1 overflow-y-auto px-4 py-2">
+              {filteredMessages.map((msg, idx) => (
                 <div
-                  key={msg.id || Math.random()}
+                  key={idx}
                   className={`flex ${msg.sender === yourName ? "justify-end" : "justify-start"} mb-2`}
                 >
-                  <div
-                    className={`max-w-xs p-3 rounded-2xl shadow ${msg.sender === yourName ? "bg-green-100" : "bg-white"}`}
-                  >
-                    <p className="text-sm">{msg.text}</p>
-                    <p className="text-xs text-gray-500 mt-1">{msg.timestamp}</p>
+                  <div className={`p-3 rounded-xl max-w-xs shadow-md text-sm ${
+                    msg.sender === yourName ? "bg-green-100" : "bg-white"
+                  }`}>
+                    <p>{msg.text}</p>
+                    <p className="text-[10px] text-gray-500 text-right">{msg.timestamp}</p>
                   </div>
                 </div>
               ))}
+              <div ref={chatEndRef}></div>
             </div>
-            <div className="p-4 bg-gray-100 flex items-center space-x-2">
-              <input
-                type="text"
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                className="flex-1 p-2 rounded-full border"
-                placeholder="Type a message..."
-              />
-              <button
-                onClick={sendMessage}
-                className="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center"
-              >
-                ➤
-              </button>
+            <div className="p-4 bg-white flex flex-col gap-2">
+              <div className="flex flex-wrap gap-2">
+                {emojiList.map((emoji, i) => (
+                  <button key={i} className="text-2xl" onClick={() => setNewMessage(prev => prev + emoji)}>{emoji}</button>
+                ))}
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
+                  className="flex-1 p-2 border rounded-full"
+                  placeholder="Type a message..."
+                />
+                <button
+                  onClick={sendMessage}
+                  className="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center"
+                >
+                  ➤
+                </button>
+              </div>
             </div>
           </div>
         </div>
