@@ -11,16 +11,36 @@ app.use(cors());
 app.use(express.json());
 
 // In-memory data (resets on server restart)
-let users = [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }];
-let listings = [
-  { id: 1, title: "Used Laptop", price: 300, seller: "Alice" },
-  { id: 2, title: "Bike", price: 150, seller: "Bob" }
-];
+let users = []; // { id, name, password }
+let listings = [];
 let messages = [];
 
-// API endpoints
-app.get('/users', (req, res) => res.json(users));
+// API Endpoints
+app.get('/users', (req, res) => res.json(users.map(u => ({ id: u.id, name: u.name })))); // Password hide karna
 app.get('/listings', (req, res) => res.json(listings));
+
+// Sign-Up Endpoint
+app.post('/signup', (req, res) => {
+  const { name, password } = req.body;
+  if (!name || !password) return res.status(400).json({ error: 'Username and password required' });
+  if (users.some(u => u.name === name)) return res.status(400).json({ error: 'Username already taken' });
+
+  const newUser = { id: users.length + 1, name, password };
+  users.push(newUser);
+  io.emit('users', users.map(u => ({ id: u.id, name: u.name })));
+  res.status(201).json({ message: 'Sign up successful', user: { id: newUser.id, name: newUser.name } });
+});
+
+// Sign-In Endpoint
+app.post('/signin', (req, res) => {
+  const { name, password } = req.body;
+  if (!name || !password) return res.status(400).json({ error: 'Username and password required' });
+
+  const user = users.find(u => u.name === name && u.password === password);
+  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+
+  res.json({ message: 'Sign in successful', user: { id: user.id, name: user.name } });
+});
 
 app.post('/listings', (req, res) => {
   const newListing = { id: listings.length + 1, ...req.body };
@@ -29,29 +49,22 @@ app.post('/listings', (req, res) => {
   res.status(201).json(newListing);
 });
 
-app.post('/users', (req, res) => {
-  const newUser = { id: users.length + 1, name: req.body.name };
-  users.push(newUser);
-  io.emit('users', users);
-  res.status(201).json(newUser);
-});
-
-// Negotiation endpoint (AI logic)
+// Negotiation Endpoint (AI logic)
 app.post('/negotiate', (req, res) => {
   const { price } = req.body;
-  const suggestedPrice = Math.round(price * 0.85); // simple AI logic
+  const suggestedPrice = Math.round(price * 0.85); // Simple AI logic
   res.json({ suggestedPrice });
 });
 
-// Root response
+// Root Response
 app.get('/', (req, res) => res.send('ChatMarket Server'));
 
-// Socket.IO connection
+// Socket.IO Connection
 io.on('connection', (socket) => {
   console.log('User connected');
   let userName = "";
 
-  socket.emit('users', users);
+  socket.emit('users', users.map(u => ({ id: u.id, name: u.name })));
   socket.emit('listings', listings);
   socket.emit('messages', messages);
 

@@ -2,180 +2,207 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>ChatMarket</title>
-  <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.development.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/babel-standalone@6/babel.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4/dist/socket.io.min.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ChatMarket - Modern Edition</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    @keyframes slideIn {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .message { animation: slideIn 0.3s ease-out; }
+    .chat-box::-webkit-scrollbar { width: 6px; }
+    .chat-box::-webkit-scrollbar-thumb { background: #25D366; border-radius: 10px; }
+    .marketplace::-webkit-scrollbar { width: 6px; }
+    .marketplace::-webkit-scrollbar-thumb { background: #075E54; border-radius: 10px; }
+  </style>
 </head>
-<body class="bg-gray-100">
-  <div id="root" class="h-screen w-screen"></div>
+<body class="bg-gray-100 font-['Poppins'] h-screen flex overflow-hidden">
+  <!-- Sign-In Modal -->
+  <div id="signInModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-6 w-96 shadow-lg">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Sign In to ChatMarket</h2>
+      <input type="text" id="signInUsername" placeholder="Username" class="w-full p-2 mb-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <input type="password" id="signInPassword" placeholder="Password" class="w-full p-2 mb-4 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <button onclick="signIn()" class="w-full bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 transition">Sign In</button>
+      <p class="text-sm text-gray-600 mt-2">New here? <span onclick="showSignUp()" class="text-green-600 cursor-pointer hover:underline">Sign Up</span></p>
+    </div>
+  </div>
 
-  <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+  <!-- Sign-Up Modal -->
+  <div id="signUpModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-6 w-96 shadow-lg">
+      <h2 class="text-2xl font-semibold text-gray-800 mb-4">Sign Up for ChatMarket</h2>
+      <input type="text" id="signUpUsername" placeholder="Username" class="w-full p-2 mb-3 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <input type="password" id="signUpPassword" placeholder="Password" class="w-full p-2 mb-4 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+      <button onclick="signUp()" class="w-full bg-teal-600 text-white p-2 rounded-lg hover:bg-teal-700 transition">Sign Up</button>
+      <p class="text-sm text-gray-600 mt-2">Already have an account? <span onclick="showSignIn()" class="text-green-600 cursor-pointer hover:underline">Sign In</span></p>
+    </div>
+  </div>
 
-    function App() {
-      const [messages, setMessages] = useState([]);
-      const [listings, setListings] = useState([]);
-      const [users, setUsers] = useState([]);
-      const [newMessage, setNewMessage] = useState("");
-      const [newListing, setNewListing] = useState({ title: "", price: "", seller: "" });
-      const [newUser, setNewUser] = useState("");
-      const [socket, setSocket] = useState(null);
-      const [currentChat, setCurrentChat] = useState(null);
-      const [yourName, setYourName] = useState("");
-      const chatEndRef = useRef(null);
-      const emojiList = ["😀", "😂", "😍", "😎", "😭", "👍", "🎉", "❤️", "🔥"];
+  <!-- Sidebar -->
+  <div class="w-80 bg-white shadow-lg flex flex-col hidden" id="sidebar">
+    <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4">
+      <h3 class="text-xl font-semibold">ChatMarket</h3>
+      <p id="currentUserDisplay" class="text-sm opacity-75"></p>
+    </div>
+    <div class="p-4 flex-1 overflow-y-auto">
+      <h4 class="text-gray-700 font-medium mb-2">Users</h4>
+      <div id="userList" class="space-y-2"></div>
+    </div>
+  </div>
 
-      const SERVER_URL = "https://chatmarket-1.onrender.com";
+  <!-- Main Content -->
+  <div class="flex-1 flex flex-col hidden" id="mainContent">
+    <div class="bg-green-600 text-white p-4 shadow-md" id="chatHeader">Chat</div>
+    <div class="chat-box flex-1 p-4 bg-[url('https://whatsapp.com/img/chat-bg.png')] bg-repeat overflow-y-auto">
+      <div id="chatBox" class="space-y-3"></div>
+    </div>
+    <div class="message-input p-4 bg-white border-t flex items-center space-x-3">
+      <input type="text" id="messageInput" placeholder="Type a message..." class="flex-1 p-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" onkeydown="if(event.key === 'Enter') sendMessage()" />
+      <button onclick="sendMessage()" class="bg-green-600 text-white p-3 rounded-full hover:bg-green-700 transition">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
+      </button>
+    </div>
+    <div class="marketplace p-4 bg-gray-50 border-t overflow-y-auto h-64">
+      <h4 class="text-gray-700 font-medium mb-2">Marketplace</h4>
+      <div id="listingContainer" class="space-y-3"></div>
+      <div class="mt-4 flex space-x-2">
+        <input type="text" id="listingTitle" placeholder="Item Title" class="flex-1 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+        <input type="number" id="listingPrice" placeholder="Price" class="w-24 p-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" />
+        <button onclick="addListing()" class="bg-teal-600 text-white p-2 rounded-lg hover:bg-teal-700 transition">Add</button>
+      </div>
+    </div>
+  </div>
 
-      useEffect(() => {
-        if (!yourName) return;
-        const sock = io(SERVER_URL);
-        setSocket(sock);
+  <!-- Socket.IO Script -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <script>
+    const baseUrl = "https://chatmarket-1.onrender.com";
+    const socket = io(baseUrl);
+    let currentUser = "";
+    let selectedUser = "";
+    const usersDB = JSON.parse(localStorage.getItem("usersDB")) || {}; // Simple local storage for demo
 
-        sock.emit('register', yourName);
-        sock.on('users', setUsers);
-        sock.on('listings', setListings);
-        sock.on('messages', setMessages);
+    // Show Sign-In Modal on Load
+    document.getElementById("signInModal").classList.remove("hidden");
 
-        fetch(`${SERVER_URL}/users`).then(res => res.json()).then(setUsers);
-        fetch(`${SERVER_URL}/listings`).then(res => res.json()).then(setListings);
-
-        return () => sock.disconnect();
-      }, [yourName]);
-
-      useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      }, [messages]);
-
-      const sendMessage = () => {
-        if (newMessage.trim() && socket && currentChat) {
-          const msg = {
-            sender: yourName,
-            text: newMessage,
-            to: currentChat,
-            from: yourName
-          };
-          socket.emit('message', msg);
-          setNewMessage("");
-        }
-      };
-
-      const filteredMessages = messages.filter(msg =>
-        (msg.from === yourName && msg.to === currentChat) ||
-        (msg.from === currentChat && msg.to === yourName)
-      );
-
-      if (!yourName) {
-        return (
-          <div className="flex h-full items-center justify-center bg-gray-200">
-            <div className="bg-white p-6 rounded-lg shadow-lg">
-              <h2 className="text-xl font-bold mb-4">Enter Your Name</h2>
-              <input
-                type="text"
-                value={yourName}
-                onChange={(e) => setYourName(e.target.value)}
-                className="w-full p-2 border rounded mb-4"
-                placeholder="Your name"
-              />
-              <p className="text-sm text-gray-600">You need a name to start chatting!</p>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div className="flex h-full">
-          {/* Sidebar */}
-          <div className="w-1/3 bg-white border-r flex flex-col">
-            <div className="bg-green-600 text-white p-4">
-              <h1 className="text-lg font-bold">ChatMarket</h1>
-              <p className="text-sm">Logged in as: {yourName}</p>
-            </div>
-            <div className="p-4 overflow-y-auto flex-1">
-              <h2 className="font-semibold mb-2">Users</h2>
-              {users.map(user => (
-                <div
-                  key={user.id || user.name}
-                  onClick={() => setCurrentChat(user.name)}
-                  className={`p-2 rounded-lg mb-1 cursor-pointer text-sm ${currentChat === user.name ? "bg-green-100" : "bg-gray-100"}`}
-                >
-                  {user.name}
-                </div>
-              ))}
-              <input
-                type="text"
-                value={newUser}
-                onChange={(e) => setNewUser(e.target.value)}
-                className="w-full p-2 border rounded mt-2 mb-1"
-                placeholder="Add new user"
-              />
-              <button onClick={() => {
-                if (newUser.trim()) {
-                  fetch(`${SERVER_URL}/users`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ name: newUser })
-                  });
-                  setNewUser("");
-                }
-              }} className="w-full bg-green-600 text-white p-2 rounded">Add User</button>
-            </div>
-          </div>
-
-          {/* Chat Area */}
-          <div className="w-2/3 flex flex-col bg-[url('https://i.imgur.com/Oa1FqXG.png')] bg-cover">
-            <div className="bg-green-600 text-white p-4">
-              <h2 className="text-lg font-semibold">{currentChat ? `Chat with ${currentChat}` : "Select a user to start chat"}</h2>
-            </div>
-            <div className="flex-1 overflow-y-auto px-4 py-2">
-              {filteredMessages.map((msg, idx) => (
-                <div
-                  key={idx}
-                  className={`flex ${msg.sender === yourName ? "justify-end" : "justify-start"} mb-2`}
-                >
-                  <div className={`p-3 rounded-xl max-w-xs shadow-md text-sm ${
-                    msg.sender === yourName ? "bg-green-100" : "bg-white"
-                  }`}>
-                    <p>{msg.text}</p>
-                    <p className="text-[10px] text-gray-500 text-right">{msg.timestamp}</p>
-                  </div>
-                </div>
-              ))}
-              <div ref={chatEndRef}></div>
-            </div>
-            <div className="p-4 bg-white flex flex-col gap-2">
-              <div className="flex flex-wrap gap-2">
-                {emojiList.map((emoji, i) => (
-                  <button key={i} className="text-2xl" onClick={() => setNewMessage(prev => prev + emoji)}>{emoji}</button>
-                ))}
-              </div>
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyDown={(e) => e.key === 'Enter' && sendMessage()}
-                  className="flex-1 p-2 border rounded-full"
-                  placeholder="Type a message..."
-                />
-                <button
-                  onClick={sendMessage}
-                  className="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center"
-                >
-                  ➤
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      );
+    function showSignIn() {
+      document.getElementById("signInModal").classList.remove("hidden");
+      document.getElementById("signUpModal").classList.add("hidden");
     }
 
-    ReactDOM.render(<App />, document.getElementById("root"));
+    function showSignUp() {
+      document.getElementById("signUpModal").classList.remove("hidden");
+      document.getElementById("signInModal").classList.add("hidden");
+    }
+
+    function signUp() {
+      const username = document.getElementById("signUpUsername").value.trim();
+      const password = document.getElementById("signUpPassword").value.trim();
+      if (!username || !password) return alert("Enter username and password");
+      if (usersDB[username]) return alert("Username already taken");
+      
+      usersDB[username] = password;
+      localStorage.setItem("usersDB", JSON.stringify(usersDB));
+      alert("Sign up successful! Please sign in.");
+      showSignIn();
+      document.getElementById("signUpUsername").value = "";
+      document.getElementById("signUpPassword").value = "";
+    }
+
+    function signIn() {
+      const username = document.getElementById("signInUsername").value.trim();
+      const password = document.getElementById("signInPassword").value.trim();
+      if (!username || !password) return alert("Enter username and password");
+      if (usersDB[username] !== password) return alert("Invalid credentials");
+      
+      currentUser = username;
+      document.getElementById("currentUserDisplay").innerText = `Logged in as: ${username}`;
+      document.getElementById("signInModal").classList.add("hidden");
+      document.getElementById("sidebar").classList.remove("hidden");
+      document.getElementById("mainContent").classList.remove("hidden");
+      socket.emit("register", username);
+    }
+
+    function sendMessage() {
+      const msg = document.getElementById("messageInput").value.trim();
+      if (!msg || !selectedUser) return;
+      socket.emit("message", { from: currentUser, to: selectedUser, content: msg });
+      document.getElementById("messageInput").value = "";
+    }
+
+    function addListing() {
+      const title = document.getElementById("listingTitle").value.trim();
+      const price = +document.getElementById("listingPrice").value;
+      if (!title || !price || !currentUser) return alert("Enter details and sign in first");
+      
+      fetch(`${baseUrl}/negotiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price })
+      })
+        .then(res => res.json())
+        .then(data => {
+          const negotiatedPrice = data.suggestedPrice;
+          fetch(`${baseUrl}/listings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser })
+          });
+          document.getElementById("listingTitle").value = "";
+          document.getElementById("listingPrice").value = "";
+        });
+    }
+
+    socket.on("users", (users) => {
+      const list = document.getElementById("userList");
+      list.innerHTML = "";
+      users.forEach(user => {
+        const div = document.createElement("div");
+        div.className = "p-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition cursor-pointer flex items-center space-x-2";
+        div.innerHTML = `<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>${user.name}</span>`;
+        div.onclick = () => {
+          selectedUser = user.name;
+          document.getElementById("chatHeader").innerText = `Chat with ${selectedUser}`;
+          socket.emit("message", { from: currentUser, to: selectedUser, content: "" });
+        };
+        list.appendChild(div);
+      });
+    });
+
+    socket.on("listings", (listings) => {
+      const container = document.getElementById("listingContainer");
+      container.innerHTML = "";
+      listings.forEach(listing => {
+        const card = document.createElement("div");
+        card.className = "bg-white rounded-xl p-3 flex items-center shadow-md hover:shadow-lg transition";
+        card.innerHTML = `
+          <img src="https://via.placeholder.com/80" class="w-20 h-20 rounded-lg mr-3 object-cover" />
+          <div>
+            <h4 class="text-lg font-semibold text-gray-800">${listing.title}</h4>
+            <p class="text-teal-600 font-medium">₹${listing.price}</p>
+            <p class="text-sm text-gray-500">Seller: ${listing.seller}</p>
+          </div>`;
+        container.appendChild(card);
+      });
+    });
+
+    socket.on("messages", (messages) => {
+      const chatBox = document.getElementById("chatBox");
+      chatBox.innerHTML = "";
+      messages.forEach(msg => {
+        if ((msg.from === currentUser && msg.to === selectedUser) ||
+            (msg.from === selectedUser && msg.to === currentUser)) {
+          const div = document.createElement("div");
+          div.className = `message max-w-xs p-3 rounded-2xl shadow ${msg.from === currentUser ? "bg-green-100 ml-auto" : "bg-white"}`;
+          div.innerText = msg.content;
+          chatBox.appendChild(div);
+        }
+      });
+      chatBox.scrollTop = chatBox.scrollHeight;
+    });
   </script>
 </body>
 </html>
