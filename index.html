@@ -43,14 +43,18 @@
 
   <!-- Sidebar -->
   <div class="w-80 bg-white shadow-lg flex flex-col hidden" id="sidebar">
-    <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4">
-      <h3 class="text-xl font-semibold">ChatMarket</h3>
-      <p id="currentUserDisplay" class="text-sm opacity-75"></p>
+    <div class="bg-gradient-to-r from-green-600 to-teal-600 text-white p-4 flex justify-between items-center">
+      <div>
+        <h3 class="text-xl font-semibold">ChatMarket</h3>
+        <p id="currentUserDisplay" class="text-sm opacity-75"></p>
+      </div>
+      <button onclick="logout()" class="bg-red-500 text-white px-3 py-1 rounded-lg hover:bg-red-600 transition">Logout</button>
     </div>
     <div class="p-4 flex-1 overflow-y-auto">
       <h4 class="text-gray-700 font-medium mb-2">Users</h4>
       <div id="userList" class="space-y-2"></div>
     </div>
+    <button onclick="toggleLayout()" class="bg-blue-500 text-white p-2 m-4 rounded-lg hover:bg-blue-600 transition">Toggle Layout</button>
   </div>
 
   <!-- Main Content -->
@@ -79,12 +83,13 @@
   <!-- Socket.IO Script -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const baseUrl = "https://chatmarket-1.onrender.com"; // Tera Render URL yahan daal
+    const baseUrl = "https://chatmarket-1.onrender.com";
     const socket = io(baseUrl);
     let currentUser = "";
     let selectedUser = "";
+    let currentItemId = null;
+    let isVerticalLayout = false;
 
-    // Show Sign-In Modal on Load
     document.getElementById("signInModal").classList.remove("hidden");
 
     function showSignIn() {
@@ -136,13 +141,48 @@
           document.getElementById("sidebar").classList.remove("hidden");
           document.getElementById("mainContent").classList.remove("hidden");
           socket.emit("register", username);
+          fetchSuperheroPic();
         });
+    }
+
+    function logout() {
+      currentUser = "";
+      selectedUser = "";
+      currentItemId = null;
+      document.getElementById("currentUserDisplay").innerText = "";
+      document.getElementById("sidebar").classList.add("hidden");
+      document.getElementById("mainContent").classList.add("hidden");
+      document.getElementById("signInModal").classList.remove("hidden");
+      socket.disconnect();
+      setTimeout(() => socket.connect(), 100);
+    }
+
+    function toggleLayout() {
+      isVerticalLayout = !isVerticalLayout;
+      const body = document.body;
+      const sidebar = document.getElementById("sidebar");
+      const mainContent = document.getElementById("mainContent");
+      if (isVerticalLayout) {
+        body.classList.remove("flex");
+        body.classList.add("flex-col");
+        sidebar.classList.remove("w-80");
+        sidebar.classList.add("w-full");
+        mainContent.classList.add("w-full");
+      } else {
+        body.classList.remove("flex-col");
+        body.classList.add("flex");
+        sidebar.classList.remove("w-full");
+        sidebar.classList.add("w-80");
+        mainContent.classList.remove("w-full");
+      }
     }
 
     function sendMessage() {
       const msg = document.getElementById("messageInput").value.trim();
       if (!msg || !selectedUser) return;
-      socket.emit("message", { from: currentUser, to: selectedUser, content: msg });
+      const messageData = { from: currentUser, to: selectedUser, content: msg };
+      if (currentItemId) messageData.itemId = currentItemId;
+      socket.emit("message", messageData);
       document.getElementById("messageInput").value = "";
     }
 
@@ -150,7 +190,7 @@
       const title = document.getElementById("listingTitle").value.trim();
       const price = +document.getElementById("listingPrice").value;
       if (!title || !price || !currentUser) return alert("Enter details and sign in first");
-      
+
       fetch(`${baseUrl}/negotiate`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -159,14 +199,40 @@
         .then(res => res.json())
         .then(data => {
           const negotiatedPrice = data.suggestedPrice;
-          fetch(`${baseUrl}/listings`, {
+          fetch(`${baseUrl}/generate-image`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser })
-          });
-          document.getElementById("listingTitle").value = "";
-          document.getElementById("listingPrice").value = "";
+            body: JSON.stringify({ itemName: title })
+          })
+            .then(res => res.json())
+            .then(imageData => {
+              fetch(`${baseUrl}/listings`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser, imageUrl: imageData.imageUrl })
+              });
+              document.getElementById("listingTitle").value = "";
+              document.getElementById("listingPrice").value = "";
+            });
         });
+    }
+
+    function fetchSuperheroPic() {
+      fetch(`${baseUrl}/superhero-pic`)
+        .then(res => res.json())
+        .then(data => {
+          document.getElementById("currentUserDisplay").innerHTML = `Logged in as: ${currentUser} <img src="${data.imageUrl}" class="w-6 h-6 inline rounded-full" />`;
+        });
+    }
+
+    function placeBid(listingId, price) {
+      const amount = prompt("Enter your bid amount:");
+      if (!amount || isNaN(amount) || amount <= price) return alert("Enter a higher valid amount");
+      fetch(`${baseUrl}/bid`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId, user: currentUser, amount: +amount })
+      });
     }
 
     socket.on("connect", () => console.log("Connected to server"));
@@ -176,12 +242,13 @@
       const list = document.getElementById("userList");
       list.innerHTML = "";
       users.forEach(user => {
-        if (user.name !== currentUser) { // Exclude current user from list
+        if (user.name !== currentUser) {
           const div = document.createElement("div");
           div.className = "p-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition cursor-pointer flex items-center space-x-2";
           div.innerHTML = `<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>${user.name}</span>`;
           div.onclick = () => {
             selectedUser = user.name;
+            currentItemId = null;
             document.getElementById("chatHeader").innerText = `Chat with ${selectedUser}`;
             updateChat();
           };
@@ -194,15 +261,19 @@
       const container = document.getElementById("listingContainer");
       container.innerHTML = "";
       listings.forEach(listing => {
+        const highestBid = bids.filter(b => b.listingId === listing.id).sort((a, b) => b.amount - a.amount)[0];
         const card = document.createElement("div");
         card.className = "bg-white rounded-xl p-3 flex items-center shadow-md hover:shadow-lg transition";
         card.innerHTML = `
-          <img src="https://via.placeholder.com/80" class="w-20 h-20 rounded-lg mr-3 object-cover" />
-          <div>
+          <img src="${listing.imageUrl || 'https://via.placeholder.com/80'}" class="w-20 h-20 rounded-lg mr-3 object-cover" />
+          <div class="flex-1">
             <h4 class="text-lg font-semibold text-gray-800">${listing.title}</h4>
-            <p class="text-teal-600 font-medium">₹${listing.price}</p>
-            <p class="text-sm text-gray-500">Seller: ${listing.seller}</p>
-          </div>`;
+            <p class="text-teal-600 font-medium">₹${highestBid ? highestBid.amount : listing.price}</p>
+            <p class="text-sm text-gray-500">Seller: ${listing.seller}${highestBid ? ' | Highest Bid by: ' + highestBid.user : ''}</p>
+          </div>
+          <button onclick="startItemChat(${listing.id}, '${listing.seller}')" class="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition mr-2">Chat</button>
+          <button onclick="placeBid(${listing.id}, ${highestBid ? highestBid.amount : listing.price})" class="bg-purple-500 text-white p-2 rounded-lg hover:bg-purple-600 transition">Bid</button>
+        `;
         container.appendChild(card);
       });
     });
@@ -211,16 +282,30 @@
       updateChat(messages);
     });
 
-    function updateChat(messages = messages) {
+    socket.on("bids", (bids) => {
+      window.bids = bids; // Store bids globally for access
+      socket.emit("listings", listings); // Refresh listings to show updated bids
+    });
+
+    function startItemChat(listingId, seller) {
+      selectedUser = seller;
+      currentItemId = listingId;
+      document.getElementById("chatHeader").innerText = `Chat with ${seller} about Item #${listingId}`;
+      updateChat();
+    }
+
+    function updateChat(messages) {
       const chatBox = document.getElementById("chatBox");
       chatBox.innerHTML = "";
       messages.forEach(msg => {
         if ((msg.from === currentUser && msg.to === selectedUser) ||
             (msg.from === selectedUser && msg.to === currentUser)) {
-          const div = document.createElement("div");
-          div.className = `message max-w-xs p-3 rounded-2xl shadow ${msg.from === currentUser ? "bg-green-100 ml-auto" : "bg-white"}`;
-          div.innerText = `${msg.content} (${msg.timestamp})`;
-          chatBox.appendChild(div);
+          if (!currentItemId || (msg.itemId && msg.itemId === currentItemId)) {
+            const div = document.createElement("div");
+            div.className = `message max-w-xs p-3 rounded-2xl shadow ${msg.from === currentUser ? "bg-green-100 ml-auto" : "bg-white"}`;
+            div.innerText = `${msg.content} (${msg.timestamp})`;
+            chatBox.appendChild(div);
+          }
         }
       });
       chatBox.scrollTop = chatBox.scrollHeight;
