@@ -10,13 +10,13 @@ const io = socketIo(server, { cors: { origin: '*' } });
 app.use(cors());
 app.use(express.json());
 
-// In-memory data (resets on server restart)
-let users = []; // { id, name, password }
+// In-memory data
+let users = [];
 let listings = [];
 let messages = [];
 
 // API Endpoints
-app.get('/users', (req, res) => res.json(users.map(u => ({ id: u.id, name: u.name })))); // Password hide karna
+app.get('/users', (req, res) => res.json(users.map(u => ({ id: u.id, name: u.name })))); // No passwords in response
 app.get('/listings', (req, res) => res.json(listings));
 
 // Sign-Up Endpoint
@@ -27,7 +27,7 @@ app.post('/signup', (req, res) => {
 
   const newUser = { id: users.length + 1, name, password };
   users.push(newUser);
-  io.emit('users', users.map(u => ({ id: u.id, name: u.name })));
+  io.emit('users', users.map(u => ({ id: u.id, name: u.name }))); // Broadcast to all clients
   res.status(201).json({ message: 'Sign up successful', user: { id: newUser.id, name: newUser.name } });
 });
 
@@ -45,33 +45,34 @@ app.post('/signin', (req, res) => {
 app.post('/listings', (req, res) => {
   const newListing = { id: listings.length + 1, ...req.body };
   listings.push(newListing);
-  io.emit('listings', listings);
+  io.emit('listings', listings); // Broadcast to all clients
   res.status(201).json(newListing);
 });
 
-// Negotiation Endpoint (AI logic)
 app.post('/negotiate', (req, res) => {
   const { price } = req.body;
-  const suggestedPrice = Math.round(price * 0.85); // Simple AI logic
+  const suggestedPrice = Math.round(price * 0.85);
   res.json({ suggestedPrice });
 });
 
-// Root Response
 app.get('/', (req, res) => res.send('ChatMarket Server'));
 
 // Socket.IO Connection
 io.on('connection', (socket) => {
   console.log('User connected');
-  let userName = "";
-
   socket.emit('users', users.map(u => ({ id: u.id, name: u.name })));
   socket.emit('listings', listings);
   socket.emit('messages', messages);
 
   socket.on('register', (name) => {
-    userName = name;
     socket.userName = name;
     console.log(`User registered: ${name}`);
+    // Ensure user is in list and broadcast
+    if (!users.some(u => u.name === name)) {
+      const newUser = { id: users.length + 1, name };
+      users.push(newUser);
+    }
+    io.emit('users', users.map(u => ({ id: u.id, name: u.name }))); // Broadcast updated users list
   });
 
   socket.on('message', (msg) => {
@@ -81,19 +82,11 @@ io.on('connection', (socket) => {
       ...msg
     };
     messages.push(newMsg);
-
-    for (let [id, s] of io.sockets.sockets) {
-      if ([msg.from, msg.to].includes(s.userName)) {
-        s.emit('messages', messages.filter(m =>
-          (m.from === msg.from && m.to === msg.to) ||
-          (m.from === msg.to && m.to === msg.from)
-        ));
-      }
-    }
+    io.emit('messages', messages); // Broadcast to all clients
   });
 
   socket.on('disconnect', () => {
-    console.log(`User disconnected: ${userName}`);
+    console.log(`User disconnected: ${socket.userName}`);
   });
 });
 

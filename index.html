@@ -79,11 +79,10 @@
   <!-- Socket.IO Script -->
   <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
   <script>
-    const baseUrl = "https://chatmarket-1.onrender.com";
+    const baseUrl = "https://chatmarket-1.onrender.com"; // Tera Render URL yahan daal
     const socket = io(baseUrl);
     let currentUser = "";
     let selectedUser = "";
-    const usersDB = JSON.parse(localStorage.getItem("usersDB")) || {}; // Simple local storage for demo
 
     // Show Sign-In Modal on Load
     document.getElementById("signInModal").classList.remove("hidden");
@@ -102,28 +101,42 @@
       const username = document.getElementById("signUpUsername").value.trim();
       const password = document.getElementById("signUpPassword").value.trim();
       if (!username || !password) return alert("Enter username and password");
-      if (usersDB[username]) return alert("Username already taken");
-      
-      usersDB[username] = password;
-      localStorage.setItem("usersDB", JSON.stringify(usersDB));
-      alert("Sign up successful! Please sign in.");
-      showSignIn();
-      document.getElementById("signUpUsername").value = "";
-      document.getElementById("signUpPassword").value = "";
+
+      fetch(`${baseUrl}/signup`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: username, password })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) return alert(data.error);
+          alert("Sign up successful! Please sign in.");
+          showSignIn();
+          document.getElementById("signUpUsername").value = "";
+          document.getElementById("signUpPassword").value = "";
+        });
     }
 
     function signIn() {
       const username = document.getElementById("signInUsername").value.trim();
       const password = document.getElementById("signInPassword").value.trim();
       if (!username || !password) return alert("Enter username and password");
-      if (usersDB[username] !== password) return alert("Invalid credentials");
-      
-      currentUser = username;
-      document.getElementById("currentUserDisplay").innerText = `Logged in as: ${username}`;
-      document.getElementById("signInModal").classList.add("hidden");
-      document.getElementById("sidebar").classList.remove("hidden");
-      document.getElementById("mainContent").classList.remove("hidden");
-      socket.emit("register", username);
+
+      fetch(`${baseUrl}/signin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: username, password })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) return alert(data.error);
+          currentUser = username;
+          document.getElementById("currentUserDisplay").innerText = `Logged in as: ${username}`;
+          document.getElementById("signInModal").classList.add("hidden");
+          document.getElementById("sidebar").classList.remove("hidden");
+          document.getElementById("mainContent").classList.remove("hidden");
+          socket.emit("register", username);
+        });
     }
 
     function sendMessage() {
@@ -156,19 +169,24 @@
         });
     }
 
+    socket.on("connect", () => console.log("Connected to server"));
+    socket.on("disconnect", () => console.log("Disconnected from server"));
+
     socket.on("users", (users) => {
       const list = document.getElementById("userList");
       list.innerHTML = "";
       users.forEach(user => {
-        const div = document.createElement("div");
-        div.className = "p-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition cursor-pointer flex items-center space-x-2";
-        div.innerHTML = `<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>${user.name}</span>`;
-        div.onclick = () => {
-          selectedUser = user.name;
-          document.getElementById("chatHeader").innerText = `Chat with ${selectedUser}`;
-          socket.emit("message", { from: currentUser, to: selectedUser, content: "" });
-        };
-        list.appendChild(div);
+        if (user.name !== currentUser) { // Exclude current user from list
+          const div = document.createElement("div");
+          div.className = "p-3 bg-gray-100 rounded-lg hover:bg-gray-200 transition cursor-pointer flex items-center space-x-2";
+          div.innerHTML = `<span class="w-2 h-2 bg-green-500 rounded-full"></span><span>${user.name}</span>`;
+          div.onclick = () => {
+            selectedUser = user.name;
+            document.getElementById("chatHeader").innerText = `Chat with ${selectedUser}`;
+            updateChat();
+          };
+          list.appendChild(div);
+        }
       });
     });
 
@@ -190,6 +208,10 @@
     });
 
     socket.on("messages", (messages) => {
+      updateChat(messages);
+    });
+
+    function updateChat(messages = messages) {
       const chatBox = document.getElementById("chatBox");
       chatBox.innerHTML = "";
       messages.forEach(msg => {
@@ -197,12 +219,12 @@
             (msg.from === selectedUser && msg.to === currentUser)) {
           const div = document.createElement("div");
           div.className = `message max-w-xs p-3 rounded-2xl shadow ${msg.from === currentUser ? "bg-green-100 ml-auto" : "bg-white"}`;
-          div.innerText = msg.content;
+          div.innerText = `${msg.content} (${msg.timestamp})`;
           chatBox.appendChild(div);
         }
       });
       chatBox.scrollTop = chatBox.scrollHeight;
-    });
+    }
   </script>
 </body>
 </html>
