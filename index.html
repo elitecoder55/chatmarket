@@ -25,13 +25,12 @@
       const [newUser, setNewUser] = useState("");
       const [socket, setSocket] = useState(null);
       const [currentChat, setCurrentChat] = useState(null);
-      const [yourName, setYourName] = useState(""); // Require name input
+      const [yourName, setYourName] = useState("");
 
-      // Replace with your Render URL after deployment
-       const server URL =  https://chatmarket-1.onrender.com
+      const SERVER_URL = "https://chatmarket-1.onrender.com";
 
       useEffect(() => {
-        if (!yourName) return; // Wait for name input
+        if (!yourName) return;
         const sock = io(SERVER_URL);
         setSocket(sock);
 
@@ -39,15 +38,20 @@
         sock.on('listings', (lsts) => setListings(lsts));
         sock.on('messages', (msgs) => setMessages(msgs));
 
-        fetch(`${SERVER_URL}/users`).then(res => res.json()).then(data => setUsers(data));
-        fetch(`${SERVER_URL}/listings`).then(res => res.json()).then(data => setListings(data));
+        fetch(`${SERVER_URL}/users`).then(res => res.json()).then(setUsers);
+        fetch(`${SERVER_URL}/listings`).then(res => res.json()).then(setListings);
 
         return () => sock.disconnect();
       }, [yourName]);
 
       const sendMessage = () => {
         if (newMessage.trim() && socket && currentChat) {
-          const msg = { sender: yourName, text: newMessage, to: currentChat, from: yourName };
+          const msg = {
+            sender: yourName,
+            text: newMessage,
+            to: currentChat,
+            from: yourName
+          };
           socket.emit('message', msg);
           setNewMessage("");
         }
@@ -75,10 +79,48 @@
         }
       };
 
-      const filteredMessages = messages.filter(msg => 
-        (msg.from === yourName && msg.to === currentChat) || 
+      const negotiatePrice = async (price) => {
+        try {
+          const res = await fetch(`${SERVER_URL}/negotiate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ price })
+          });
+          const data = await res.json();
+          return data.suggestedPrice;
+        } catch (error) {
+          console.error('Negotiation failed:', error);
+          return Math.round(price * 0.85);
+        }
+      };
+
+      const filteredMessages = messages.filter(msg =>
+        (msg.from === yourName && msg.to === currentChat) ||
         (msg.from === currentChat && msg.to === yourName)
       );
+
+      const ListingCard = ({ listing }) => {
+        const [suggested, setSuggested] = useState(null);
+
+        useEffect(() => {
+          negotiatePrice(listing.price).then(setSuggested);
+        }, [listing.price]);
+
+        return (
+          <div
+            onClick={() => setCurrentChat(listing.seller)}
+            className="p-3 bg-gray-100 rounded-lg mb-2 shadow cursor-pointer"
+          >
+            <h3 className="font-semibold">{listing.title}</h3>
+            <p className="text-sm text-gray-600">
+              ${listing.price} • {listing.seller}
+            </p>
+            {suggested !== null && (
+              <p className="text-xs text-blue-600">Suggested: ${suggested}</p>
+            )}
+          </div>
+        );
+      };
 
       if (!yourName) {
         return (
@@ -100,18 +142,18 @@
 
       return (
         <div className="flex h-full">
-          <div className="w-1/3 bg-gray-200 border-r flex flex-col">
+          <div className="w-1/3 bg-white border-r flex flex-col">
             <div className="bg-green-600 text-white p-4">
               <h1 className="text-lg font-bold">ChatMarket</h1>
               <p className="text-sm">Logged in as: {yourName}</p>
             </div>
-            <div className="p-4">
+            <div className="p-4 overflow-y-auto flex-1">
               <h2 className="font-semibold mb-2">Users</h2>
               {users.map(user => (
                 <div
-                  key={user.id}
+                  key={user.id || user.name}
                   onClick={() => setCurrentChat(user.name)}
-                  className={`p-3 bg-white rounded-lg mb-2 cursor-pointer ${currentChat === user.name ? "bg-green-100" : ""}`}
+                  className={`p-3 rounded-lg mb-2 cursor-pointer ${currentChat === user.name ? "bg-green-100" : "bg-gray-100"}`}
                 >
                   {user.name}
                 </div>
@@ -128,14 +170,7 @@
             <div className="p-4 border-t">
               <h2 className="font-semibold mb-2">Marketplace</h2>
               {listings.map(listing => (
-                <div 
-                  key={listing.id} 
-                  onClick={() => setCurrentChat(listing.seller)}
-                  className="p-3 bg-white rounded-lg mb-2 shadow cursor-pointer"
-                >
-                  <h3 className="font-semibold">{listing.title}</h3>
-                  <p className="text-sm text-gray-600">${listing.price} • {listing.seller}</p>
-                </div>
+                <ListingCard key={listing.id || listing.title} listing={listing} />
               ))}
               <input
                 type="text"
@@ -162,20 +197,18 @@
             </div>
           </div>
 
-          <div className="w-2/3 flex flex-col">
+          <div className="w-2/3 flex flex-col bg-[url('https://whatsapp.com/img/chat-bg.png')] bg-repeat">
             <div className="bg-green-600 text-white p-4 flex items-center">
               <h2 className="text-lg font-semibold">{currentChat ? `Chat with ${currentChat}` : "Select a user"}</h2>
             </div>
-            <div className="flex-1 p-4 bg-[url('https://whatsapp.com/img/chat-bg.png')] bg-repeat overflow-y-auto">
+            <div className="flex-1 p-4 overflow-y-auto">
               {filteredMessages.map(msg => (
                 <div
-                  key={msg.id}
+                  key={msg.id || Math.random()}
                   className={`flex ${msg.sender === yourName ? "justify-end" : "justify-start"} mb-2`}
                 >
                   <div
-                    className={`max-w-xs p-3 rounded-lg shadow ${
-                      msg.sender === yourName ? "bg-green-100" : "bg-white"
-                    }`}
+                    className={`max-w-xs p-3 rounded-2xl shadow ${msg.sender === yourName ? "bg-green-100" : "bg-white"}`}
                   >
                     <p className="text-sm">{msg.text}</p>
                     <p className="text-xs text-gray-500 mt-1">{msg.timestamp}</p>
@@ -191,7 +224,10 @@
                 className="flex-1 p-2 rounded-full border"
                 placeholder="Type a message..."
               />
-              <button onClick={sendMessage} className="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center">
+              <button
+                onClick={sendMessage}
+                className="bg-green-600 text-white p-2 rounded-full w-10 h-10 flex items-center justify-center"
+              >
                 ➤
               </button>
             </div>
