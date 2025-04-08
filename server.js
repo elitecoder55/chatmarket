@@ -10,78 +10,77 @@ const io = socketIo(server, { cors: { origin: '*' } });
 app.use(cors());
 app.use(express.json());
 
-// In-memory storage (resets on restart)
-let users = [];
-let listings = [];
+// In-memory data (resets on server restart)
+let users = [{ id: 1, name: "Alice" }, { id: 2, name: "Bob" }];
+let listings = [
+  { id: 1, title: "Used Laptop", price: 300, seller: "Alice" },
+  { id: 2, title: "Bike", price: 150, seller: "Bob" }
+];
 let messages = [];
 
-// AI Logic for price negotiation
-function negotiatePrice(originalPrice) {
-  const price = parseFloat(originalPrice);
-  if (isNaN(price)) return price;
-
-  // Simple heuristic: apply discounts based on price brackets
-  if (price > 1000) return Math.round(price * 0.75); // 25% off
-  if (price > 500) return Math.round(price * 0.80); // 20% off
-  if (price > 100) return Math.round(price * 0.85); // 15% off
-  return Math.round(price * 0.90); // 10% off
-}
-
-// API Endpoints
+// API endpoints
 app.get('/users', (req, res) => res.json(users));
-
-app.post('/users', (req, res) => {
-  const newUser = { id: Date.now(), name: req.body.name };
-  users.push(newUser);
-  io.emit('users', users);
-  res.status(201).json(newUser);
-});
-
 app.get('/listings', (req, res) => res.json(listings));
 
 app.post('/listings', (req, res) => {
-  const newListing = { id: Date.now(), ...req.body };
+  const newListing = { id: listings.length + 1, ...req.body };
   listings.push(newListing);
   io.emit('listings', listings);
   res.status(201).json(newListing);
 });
 
-// New AI route for negotiation
+app.post('/users', (req, res) => {
+  const newUser = { id: users.length + 1, name: req.body.name };
+  users.push(newUser);
+  io.emit('users', users);
+  res.status(201).json(newUser);
+});
+
+// Negotiation endpoint (AI logic)
 app.post('/negotiate', (req, res) => {
   const { price } = req.body;
-  const suggestedPrice = negotiatePrice(price);
+  const suggestedPrice = Math.round(price * 0.85); // simple AI logic
   res.json({ suggestedPrice });
 });
 
+// Root response
 app.get('/', (req, res) => res.send('ChatMarket Server'));
 
-// Socket.IO setup
+// Socket.IO connection
 io.on('connection', (socket) => {
   console.log('User connected');
+  let userName = "";
 
   socket.emit('users', users);
   socket.emit('listings', listings);
   socket.emit('messages', messages);
 
+  socket.on('register', (name) => {
+    userName = name;
+    socket.userName = name;
+    console.log(`User registered: ${name}`);
+  });
+
   socket.on('message', (msg) => {
     const newMsg = {
-      id: Date.now(),
+      id: messages.length + 1,
       timestamp: new Date().toLocaleTimeString(),
       ...msg
     };
     messages.push(newMsg);
 
-    // Emit only to sender and receiver
-    io.sockets.sockets.forEach((s) => {
-      s.emit('messages', messages.filter(m =>
-        (m.from === msg.from && m.to === msg.to) ||
-        (m.from === msg.to && m.to === msg.from)
-      ));
-    });
+    for (let [id, s] of io.sockets.sockets) {
+      if ([msg.from, msg.to].includes(s.userName)) {
+        s.emit('messages', messages.filter(m =>
+          (m.from === msg.from && m.to === msg.to) ||
+          (m.from === msg.to && m.to === msg.from)
+        ));
+      }
+    }
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected');
+    console.log(`User disconnected: ${userName}`);
   });
 });
 
