@@ -1,0 +1,26 @@
+{
+  "name": "chatmarket",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "socket.io": "^4.8.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/elitecoder55/chatmarket.git"
+  },
+  "bugs": {
+    "url": "https://github.com/elitecoder55/chatmarket/issues"
+  },
+  "homepage": "https://github.com/elitecoder55/chatmarket#readme",
+  "description": ""
+}
