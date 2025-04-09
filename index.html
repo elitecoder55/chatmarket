@@ -11,11 +11,16 @@
       from { transform: translateY(20px); opacity: 0; }
       to { transform: translateY(0); opacity: 1; }
     }
+    body {
+      background: url('https://whatsapp.com/img/chat-bg.png') repeat;
+      background-size: 300px;
+    }
     .message { animation: slideIn 0.3s ease-out; }
     .chat-box::-webkit-scrollbar { width: 6px; }
     .chat-box::-webkit-scrollbar-thumb { background: #25D366; border-radius: 10px; }
     .marketplace::-webkit-scrollbar { width: 6px; }
     .marketplace::-webkit-scrollbar-thumb { background: #075E54; border-radius: 10px; }
+    .message img { max-width: 200px; border-radius: 8px; margin-top: 5px; }
   </style>
 </head>
 <body class="bg-gray-100 font-['Poppins'] h-screen flex overflow-hidden">
@@ -65,6 +70,10 @@
     </div>
     <div class="message-input p-4 bg-white border-t flex items-center space-x-3">
       <input type="text" id="messageInput" placeholder="Type a message..." class="flex-1 p-3 rounded-full border border-gray-300 focus:outline-none focus:ring-2 focus:ring-green-500" onkeydown="if(event.key === 'Enter') sendMessage()" />
+      <label class="bg-gray-200 p-3 rounded-full cursor-pointer hover:bg-gray-300 transition">
+        <input type="file" id="imageInput" accept="image/*" class="hidden" onchange="uploadImage()" />
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+      </label>
       <button onclick="sendMessage()" class="bg-green-600 text-white p-3 rounded-full hover:bg-green-700 transition">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"></path></svg>
       </button>
@@ -186,40 +195,55 @@
       document.getElementById("messageInput").value = "";
     }
 
-    async function addListing() {
+    function uploadImage() {
+      const file = document.getElementById("imageInput").files[0];
+      if (!file || !selectedUser) return alert("Select an image and a user to chat with");
+      
+      const reader = new FileReader();
+      reader.onload = () => {
+        const base64Image = reader.result;
+        fetch(`${baseUrl}/upload-image`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image: base64Image })
+        })
+          .then(res => res.json())
+          .then(data => {
+            const messageData = { 
+              from: currentUser, 
+              to: selectedUser, 
+              content: "Image shared", 
+              imageUrl: data.imageUrl 
+            };
+            if (currentItemId) messageData.itemId = currentItemId;
+            socket.emit("message", messageData);
+            document.getElementById("imageInput").value = "";
+          });
+      };
+      reader.readAsDataURL(file);
+    }
+
+    function addListing() {
       const title = document.getElementById("listingTitle").value.trim();
       const price = +document.getElementById("listingPrice").value;
       if (!title || !price || !currentUser) return alert("Enter details and sign in first");
 
-      try {
-        const negotiateRes = await fetch(`${baseUrl}/negotiate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ price })
+      fetch(`${baseUrl}/negotiate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ price })
+      })
+        .then(res => res.json())
+        .then(data => {
+          const negotiatedPrice = data.suggestedPrice;
+          fetch(`${baseUrl}/listings`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser })
+          });
+          document.getElementById("listingTitle").value = "";
+          document.getElementById("listingPrice").value = "";
         });
-        const negotiateData = await negotiateRes.json();
-        const negotiatedPrice = negotiateData.suggestedPrice;
-
-        const imageRes = await fetch(`${baseUrl}/generate-image`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ itemName: title })
-        });
-        const imageData = await imageRes.json();
-        const imageUrl = imageData.imageUrl;
-
-        await fetch(`${baseUrl}/listings`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title, price: negotiatedPrice, seller: currentUser, imageUrl })
-        });
-
-        document.getElementById("listingTitle").value = "";
-        document.getElementById("listingPrice").value = "";
-      } catch (error) {
-        console.error("Error adding listing:", error);
-        alert("Failed to add listing. Check console for details.");
-      }
     }
 
     function fetchSuperheroPic() {
@@ -230,14 +254,27 @@
         });
     }
 
-    function placeBid(listingId, price) {
-      const amount = prompt("Enter your bid amount:");
-      if (!amount || isNaN(amount) || amount <= price) return alert("Enter a higher valid amount");
+    function placeBid(listingId, startingPrice) {
+      const amount = prompt(`Enter your offer (max ₹${startingPrice}):`);
+      if (!amount || isNaN(amount) || amount > startingPrice) return alert(`Enter a valid offer up to ₹${startingPrice}`);
       fetch(`${baseUrl}/bid`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ listingId, user: currentUser, amount: +amount })
       });
+    }
+
+    function acceptBid(listingId) {
+      fetch(`${baseUrl}/accept-bid`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ listingId, user: currentUser })
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) alert(data.error);
+          else alert(`Bid accepted! Winner: ${data.winner}`);
+        });
     }
 
     socket.on("connect", () => console.log("Connected to server"));
@@ -266,18 +303,22 @@
       const container = document.getElementById("listingContainer");
       container.innerHTML = "";
       listings.forEach(listing => {
-        const highestBid = window.bids ? window.bids.filter(b => b.listingId === listing.id).sort((a, b) => b.amount - a.amount)[0] : null;
         const card = document.createElement("div");
         card.className = "bg-white rounded-xl p-3 flex items-center shadow-md hover:shadow-lg transition";
         card.innerHTML = `
-          <img src="${listing.imageUrl || 'https://via.placeholder.com/80'}" class="w-20 h-20 rounded-lg mr-3 object-cover" onerror="this.src='https://via.placeholder.com/80'" />
+          <img src="https://via.placeholder.com/80" class="w-20 h-20 rounded-lg mr-3 object-cover" />
           <div class="flex-1">
             <h4 class="text-lg font-semibold text-gray-800">${listing.title}</h4>
-            <p class="text-teal-600 font-medium">₹${highestBid ? highestBid.amount : listing.price}</p>
-            <p class="text-sm text-gray-500">Seller: ${listing.seller}${highestBid ? ' | Highest Bid by: ' + highestBid.user : ''}</p>
+            <p class="text-teal-600 font-medium">Starting: ₹${listing.price} | Best Offer: ₹${listing.bestOffer || 'None'}</p>
+            <p class="text-sm text-gray-500">Seller: ${listing.seller} | ${listing.winner ? 'Sold to: ' + listing.winner : 'Open'}</p>
           </div>
           <button onclick="startItemChat(${listing.id}, '${listing.seller}')" class="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition mr-2">Chat</button>
-          <button onclick="placeBid(${listing.id}, ${highestBid ? highestBid.amount : listing.price})" class="bg-purple-500 text-white p-2 rounded-lg hover:bg-purple-600 transition">Bid</button>
+          ${listing.winner ? '' : `
+            <button onclick="placeBid(${listing.id}, ${listing.price})" class="bg-purple-500 text-white p-2 rounded-lg hover:bg-purple-600 transition mr-2">Offer</button>
+            ${listing.seller === currentUser && listing.bestOffer ? `
+              <button onclick="acceptBid(${listing.id})" class="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition">Accept</button>
+            ` : ''}
+          `}
         `;
         container.appendChild(card);
       });
@@ -289,7 +330,6 @@
 
     socket.on("bids", (bids) => {
       window.bids = bids;
-      socket.emit("listings", listings); // Trigger refresh
     });
 
     function startItemChat(listingId, seller) {
@@ -308,7 +348,7 @@
           if (!currentItemId || (msg.itemId && msg.itemId === currentItemId)) {
             const div = document.createElement("div");
             div.className = `message max-w-xs p-3 rounded-2xl shadow ${msg.from === currentUser ? "bg-green-100 ml-auto" : "bg-white"}`;
-            div.innerText = `${msg.content} (${msg.timestamp})`;
+            div.innerHTML = `${msg.content} (${msg.timestamp})${msg.imageUrl ? `<br><img src="${msg.imageUrl}" alt="Shared image" />` : ''}`;
             chatBox.appendChild(div);
           }
         }

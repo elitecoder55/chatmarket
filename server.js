@@ -8,7 +8,7 @@ const server = http.createServer(app);
 const io = socketIo(server, { cors: { origin: '*' } });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' })); // Increase limit for base64 images
 
 // In-memory data
 let users = [];
@@ -48,7 +48,7 @@ app.post('/signin', (req, res) => {
 });
 
 app.post('/listings', (req, res) => {
-  const newListing = { id: listings.length + 1, ...req.body };
+  const newListing = { id: listings.length + 1, ...req.body, bestOffer: null, winner: null };
   listings.push(newListing);
   io.emit('listings', listings);
   res.status(201).json(newListing);
@@ -60,30 +60,53 @@ app.post('/negotiate', (req, res) => {
   res.json({ suggestedPrice });
 });
 
-app.post('/generate-image', (req, res) => {
-  const { itemName } = req.body;
-  if (!itemName) return res.status(400).json({ error: 'Item name required' });
-  // Fallback to placeholder if no real AI integration
-  const imageUrl = `https://via.placeholder.com/150?text=${encodeURIComponent(itemName)}`;
-  console.log(`Generated image for ${itemName}: ${imageUrl}`); // Debug log
-  res.json({ imageUrl });
-});
-
 app.get('/superhero-pic', (req, res) => {
   const randomPic = superheroPics[Math.floor(Math.random() * superheroPics.length)];
   res.json({ imageUrl: randomPic });
 });
 
+app.post('/upload-image', (req, res) => {
+  const { image } = req.body; // Expecting base64 string
+  if (!image) return res.status(400).json({ error: 'Image required' });
+  // For simplicity, return base64 as-is (in production, save to storage and return URL)
+  const imageUrl = image; // Base64 data URL
+  res.json({ imageUrl });
+});
+
 app.post('/bid', (req, res) => {
   const { listingId, user, amount } = req.body;
+  const listing = listings.find(l => l.id === listingId);
+  if (!listing) return res.status(404).json({ error: 'Listing not found' });
+  if (amount > listing.price) return res.status(400).json({ error: 'Bid must be less than or equal to starting price' });
+
   const existingBid = bids.find(b => b.listingId === listingId && b.user === user);
   if (existingBid) {
     existingBid.amount = amount;
   } else {
     bids.push({ listingId, user, amount });
   }
+
+  const listingBids = bids.filter(b => b.listingId === listingId);
+  const bestOffer = listingBids.sort((a, b) => b.amount - a.amount)[0];
+  listing.bestOffer = bestOffer ? bestOffer.amount : null;
+
+  io.emit('listings', listings);
   io.emit('bids', bids.filter(b => b.listingId === listingId));
   res.status(201).json({ message: 'Bid placed', bid: { listingId, user, amount } });
+});
+
+app.post('/accept-bid', (req, res) => {
+  const { listingId, user } = req.body;
+  const listing = listings.find(l => l.id === listingId);
+  if (!listing) return res.status(404).json({ error: 'Listing not found' });
+  if (listing.seller !== user) return res.status(403).json({ error: 'Only seller can accept bids' });
+
+  const bestBid = bids.filter(b => b.listingId === listingId).sort((a, b) => b.amount - a.amount)[0];
+  if (!bestBid) return res.status(400).json({ error: 'No bids to accept' });
+
+  listing.winner = bestBid.user;
+  io.emit('listings', listings);
+  res.status(200).json({ message: 'Bid accepted', winner: listing.winner });
 });
 
 app.get('/', (req, res) => res.send('ChatMarket Server'));
